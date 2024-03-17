@@ -1,0 +1,25 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Blender3D",
+            "type": "shell",
+            "command": "C:\\Program Files\\Blender Foundation\\Blender 3.0\\blender.exe",
+            "args": [
+                "--background",
+                "${.blend}",
+                "--python",
+                ".\\FlowerGenerator\\make_flower.py"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "problemMatcher": []
+        }
+    ]
+}

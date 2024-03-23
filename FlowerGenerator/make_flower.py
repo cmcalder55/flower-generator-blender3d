@@ -2,6 +2,8 @@ import sys, random, math
 from os import system
 from mathutils import Euler, Vector
 from bpy import data, ops, context
+import bmesh
+import numpy as np
 
 def reset_scene():
     ''' Print names of objects and scenes already present in 
@@ -57,21 +59,21 @@ def add_color():
         obj.data.materials.append(mat)     
     
     ## STAMEN BASE ##
-    obj = data.objects['Cone']
+    obj = data.objects['base_cone']
     obj.color = (.156,.384,.062,1)
     mat = data.materials.new('green')
     mat.use_nodes = True
     mat.node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value = (0,0,1,1)
     obj.data.materials.append(mat)
     
-    obj = data.objects['Sphere']
+    obj = data.objects['base_ring']
     obj.color = (0.384,0.011,0.1,1)
     mat = data.materials.new('maroon')
     mat.use_nodes = True
     mat.node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value = (0,0,1,1)
     obj.data.materials.append(mat)
     
-    obj = data.objects['basecap']
+    obj = data.objects['base_cap']
     obj.color = (0.384,0.011,0.1,1)
     mat = data.materials.new('maroon')
     mat.use_nodes = True
@@ -194,37 +196,86 @@ def create_stamen_tip():
 
     return sphere
 
-def generate_stamen_like_points(num_points=10):
+def create_lens_shape():
+    # Ensure we are in Object Mode and deselect all objects
+    ops.object.mode_set(mode='OBJECT')
+    ops.object.select_all(action='DESELECT')
+    
+    # Add a UV Sphere
+    ops.mesh.primitive_uv_sphere_add(radius=1, location=(0, 0, 0))
+    sphere = context.object
+    sphere.name = 'base_cap'
+    
+    # Switch to Edit Mode
+    ops.object.mode_set(mode='EDIT')
+    # Get the bmesh representation
+    bm = bmesh.from_edit_mesh(sphere.data)
+    
+    # Define the plane for bisecting (cutting through the z-axis)
+    plane_co = (0, 0, 0.7)  # Plane point (origin)
+    plane_no = (0, 0, -1)  # Plane normal (z-axis)
+    
+    # Bisect the sphere, cutting it into two halves
+    bmesh.ops.bisect_plane(bm, geom=bm.faces[:] + bm.edges[:] + bm.verts[:], 
+                           plane_co=plane_co, plane_no=plane_no, clear_outer=True)
+    
+    # Update the mesh with the bisection
+    bmesh.update_edit_mesh(sphere.data)
+    
+    # Switch back to Object Mode
+    ops.object.mode_set(mode='OBJECT')
+    
+    # (Optional) Add a Subdivision Surface modifier to smooth the lens
+    sphere.modifiers.new(name='Subsurf', type='SUBSURF')
+    sphere.modifiers['Subsurf'].levels = 2  # Adjust this for smoother appearance
+    
+    # Apply the modifier (optional, depending on whether you want to keep the modifier adjustable)
+    ops.object.modifier_apply(modifier='Subsurf')
+    ops.transform.resize(value=(0.85, 0.85, 1.0))
+    ops.transform.translate(value=(0, 0, -0.7)) 
+
+def generate_torus_points(num_points=10):
     """
-    Generate a set of points with a distribution similar to a stamen arrangement.
+    Generate points on the surface of a torus in a normal distribution.
 
     Parameters:
-    - num_points: The number of points to generate.
+    - R: Major radius of the torus.
+    - r: Minor radius of the torus.
+    - num_points: Number of points to generate.
 
     Returns:
-    A list of tuples, each representing the (x, y, z) coordinates of a point.
+    - A list of (x, y, z) tuples representing points on the torus.
     """
-    points = []
-    center = (0.0, 0.0)  # Approximated center from the example
-    z_base = 0.5 # Base Z level for variation
-    z_variation = 0.3  # Allowable variation from the base Z level
+    r = 1.2  # Major radius
+    R = 0.7  # Minor radius
+    # Mean values for theta and phi
+    mean_theta = np.pi
+    mean_phi = np.pi
 
-    for i in range(num_points):
-        distance = random.uniform(0.5, 1.5)        
-        if i > 5:
-            distance = distance*-1
-        #     distance = random.uniform(0, 0.5)
-        # else:
+    # Standard deviation (spread or “width”) of the distribution.
+    # Adjust these values to change the distribution characteristics.
+    std_theta = np.pi
+    std_phi = np.pi
 
-        angle = 2 * math.pi * random.random()  # Random angle
-        # distance = random.uniform(-1.5, 1.5)  # Random distance from the center, adjust as needed
-        x = center[0] + distance * math.cos(angle)
-        y = center[1] + distance * math.sin(angle)
-        z = z_base + random.uniform(-z_variation, z_variation)  # Random Z level
+    z_base = 0.9 # Base Z level for variation
+    z_variation = 0.25  # Allowable variation from the base Z level
+    
+    # Generate theta and phi values from a normal distribution
+    theta = np.random.normal(mean_theta, std_theta, num_points)
+    phi = np.random.normal(mean_phi, std_phi, num_points)
 
-        points.append((x, y, z))  # Round for simplicity
+    # Ensure theta and phi are within the valid range [0, 2pi]
+    theta = np.mod(theta, 2 * np.pi)
+    phi = np.mod(phi, 2 * np.pi)
 
-    return points
+    # Calculate the x, y, and z coordinates
+    x = (R + r * np.cos(theta)) * np.cos(phi) + 0.6
+    y = (R + r * np.cos(theta)) * np.sin(phi) + 1
+    z = [z_base + np.random.uniform(-z_variation, z_variation) for _ in range(num_points)]  # Random Z level
+    
+    print(z)
+    # Return the points as a list of tuples
+    return list(zip(x, y, z))
 
 def generate_stamen(n=10):
     '''Generate stamens from the middle of the flower.'''
@@ -234,23 +285,20 @@ def generate_stamen(n=10):
     names = [f"stamen_{idx + 1}" for idx in range(n)]
 
     rot = [
+        (-90, 135, 70),
+        (-90, 135, 70),
+        (-90, 135, 75),
+        (-90, 135, 75),
+        (-90, 135, 60),
+        (-90, 135, 60),
+        (-90, 135, 150),
+        (-90, 135, 150),
         (-90, 135, -30),
         (-90, 135, -30),
-        (-90, 135, 0),
-        (-90, 135, 0),
-        (-90, 135, 30),
-        (90, 45, 60),
-        (90, 45, 60),
-        (90, 45, -60),
-        (90, 45, -60),
-        (90, 45, 30),
     ]
     rot = [(math.radians(x), math.radians(y), math.radians(z)) for x, y, z in rot]
     
-    trans = generate_stamen_like_points()
-    print(trans)
-
-
+    trans = generate_torus_points()
     stamen_curve = create_stamen_curve()
 
     for i in range(n):
@@ -271,65 +319,32 @@ def generate_stamen(n=10):
 
 def generate_stamen_base():
     '''Generate base to connect stamen to the stem.'''
+
+    col = init_collection("stamen base")
+
     ops.object.mode_set(mode='OBJECT')
     # add cone for receptacle
     ops.mesh.primitive_cone_add(rotation=(0,math.pi,0))
-    # scale and rotate
-    # ops.transform.rotate(value = math.radians(180), orient_axis = 'X')
+    cone = context.active_object
+    cone.location = (0,0,-0.7)
+    cone.name = "base_cone"
+
+    # scale
     cone_scale = 0.629
     base_scale = (cone_scale, cone_scale, cone_scale)
     ops.transform.resize(value=base_scale)
-    # translate to align with petals
-    cone_trans = (0.02, 0.09, -1.22)
-    ops.transform.translate(value=cone_trans) 
+
     # add torus for top of the stamen base and scale
     ops.mesh.primitive_torus_add(major_radius=0.93,minor_radius=.12)
-    # torus_scale = 0.918
-    # top_scale = (torus_scale, torus_scale, torus_scale)
-    top_scale = base_scale
-    ops.transform.resize(value=top_scale)
-    torus_trans = (0.02, 0.09, -0.55)
-    ops.transform.translate(value=torus_trans)
-    context.active_object.name = 'basecap'
-    ops.mesh.primitive_uv_sphere_add(location=(0.02,0.09,-1.4))
-    # points to keep 
-    points = [0, 1, 2]
-    keep = []
-    ob = points
+    torus = context.active_object
+    torus.location = (0,0,0)
+    ops.transform.resize(value=base_scale)
+    torus.name = 'base_ring'
 
-    for i in range(32):
-        if i == 0:
-            keep.extend(points)
-        else:
-            if i == 1:
-                extend = 10
-            elif i == 22:
-                extend = 16
-            else: 
-                extend = 15
-            ob = list(map(lambda x: x+extend, ob))
-            keep.extend(ob)
-    keep.append(325)
-
-    obj = context.active_object
-    ops.object.mode_set(mode='EDIT')
-    ops.mesh.select_mode(type='VERT')
-    ops.mesh.select_all(action='DESELECT')
-    ops.object.mode_set(mode='OBJECT')
+    create_lens_shape()    
     
-    for i in range(482):
-        if i not in keep:
-            obj.data.vertices[i].select = True
-
-    ops.object.mode_set(mode='EDIT')
-    ops.mesh.dissolve_verts()
-    
-    name = 'stamen base'
-    col = data.collections.new(name)
-    context.scene.collection.children.link(col)
-    
+    link_to_col(col, ["base_cap", "base_ring", "base_cone"])
     generate_stamen()
-    # ops.object.mode_set(mode='EDIT')
 
 def generate_petals(n=5):
     '''Generate five cherry blossom petals.'''
@@ -340,16 +355,22 @@ def generate_petals(n=5):
     names = [f"petal_{idx + 1}" for idx in range(n)]
 
     # rotations
-    rots = [-25, 70]
+    rot = [
+        (0, 5, -20),
+        (0, 5, 50),
+        (0, 5, 270),
+        (0, 5, 195),
+        (0, 5, 125)
+    ]
+    rot = [(math.radians(x), math.radians(y), math.radians(z)) for x, y, z in rot]
     # translations
     trans = [
-        (0.0, -2.5, 0.0),
-        (2.55, 1.8, 0.0), 
-        (-0.83, 3.18, -0.04),     
-        (-3.25, -0.17, 0.0), 
-        (-0.95, -2.95, 0.0) 
+        (0.2, -2.9, 0.6),
+        (2.8, -0.8, 0.6),
+        (-2.6, -1.0, 0.6),    
+        (-1.8, 2.3, 0.6),
+        (1.6, 2.5, 0.6)
         ]
-    loc = (0.0, 0.0, 0.0)
 
     # Create the initial petal using a bezier circle
     ops.curve.primitive_bezier_circle_add()
@@ -357,9 +378,7 @@ def generate_petals(n=5):
     for idx, translation in enumerate(trans):
         
         name = names[idx]
-        rot = rots[0]
         if idx != 0:
-            rot = rots[1]
             ops.object.duplicate_move()
 
         petal = context.active_object
@@ -404,9 +423,8 @@ def generate_petals(n=5):
 
         petal.name = name
         # apply rot and trans
-        petal.rotation_euler.z += math.radians(rot)
-        loc = tuple(a + b for a, b in zip(loc, translation))
-        petal.location = loc
+        petal.rotation_euler = Euler(rot[idx], "XYZ")
+        petal.location = translation
 
     # link to collection / unlink from scene
     link_to_col(col, names)

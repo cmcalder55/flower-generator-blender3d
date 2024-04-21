@@ -4,3 +4,6 @@ https://blender.stackexchange.com/questions/56993/how-can-i-export-my-blender-mo
 round out top middle of flower
 add stamen and receptacle (bottom leaves and node)
 stop generating extra collections and add new parts into collection
+
+Flower Generator
+(A) fix stamen Generator
